@@ -1,8 +1,3 @@
-# Deep Reinforcement Learning for Vehicle Routing Problem (VRP)
-
-![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
-![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-orange)
-![License](https://img.shields.io/badge/License-MIT-green)
 
 An Artificial Intelligence system that learns to solve the **Vehicle Routing Problem (VRP)** on its own. Using Deep Reinforcement Learning and an Attention-based Neural Network, this model teaches itself how to find the most efficient route to visit a set of customers and return to the depot.
 
