@@ -1,24 +1,21 @@
 import torch
 import numpy as np
-import json
 from src.model import AttentionDynamicModel
-from visualize import visualize_routes  # Using your visualizer
+from visualize import visualize_routes 
 
 def load_trained_model(model_path, device):
     """
-    Reconstructs the AI's 'Brain' and loads the memories (weights) 
-    from the saved file.
+    Reconstructs the AI's 'Brain' and loads the memories (weights).
     """
-    # 1. Rebuild the architecture (must match the training settings exactly)
+    # 1. Rebuild the architecture (must match training exactly)
     model = AttentionDynamicModel(embedding_dim=128, n_heads=8, n_layers=3)
     
-    # 2. Load the saved weights
-    # map_location ensures it works even if you trained on GPU but run on CPU
+    # 2. Load weights
+    # map_location ensures it loads on CPU even if trained on GPU
     checkpoint = torch.load(model_path, map_location=device)
     model.load_state_dict(checkpoint)
     
-    # 3. Set to "Evaluation Mode"
-    # This tells the model: "Stop learning, start working."
+    # 3. Evaluation Mode (Stop learning, start working)
     model.eval() 
     model.to(device)
     
@@ -28,21 +25,29 @@ def solve_problem(model, data, device):
     """
     Asks the AI to solve a specific map.
     """
-    # Prepare the data
-    # The model expects a "batch", so we add a dimension (unsqueeze)
-    # Format: [Batch_Size, Nodes, Coordinates]
+    # 1. Format the Map (Coordinates)
+    # Shape: [Batch_Size, Nodes, 2]
     inputs = torch.tensor(data, dtype=torch.float32).unsqueeze(0).to(device)
 
-    # Run the model
-    # decode_type="greedy" means: "Always pick the absolute best option you see."
-    # (As opposed to experimenting with random options like during training)
-    with torch.no_grad(): # Don't calculate gradients (saves memory)
+    # 2. Create Dummy Demands (The Fix)
+    # The model needs to know package weights. Since this is a simple visual demo,
+    # we assign a small weight (0.1) to every customer so the truck never gets "full".
+    batch_size, num_nodes, _ = inputs.size()
+    demands = torch.zeros(batch_size, num_nodes, device=device)
+    demands[:, 1:] = 0.1  # Customers have 0.1 demand, Depot (index 0) has 0
+    
+    # 3. Run the model
+    # decode_type="greedy" means: "Always pick the best option."
+    with torch.no_grad():
         model.decode_type = "greedy"
-        cost, log_likelihood, tour = model(inputs, return_pi=True)
+        # We now pass 'demands' to the model!
+        _, _, tour = model(inputs, demands, return_pi=True)
 
-    # Clean up output
-    # .cpu().numpy() moves the data from the video card back to normal memory
-    return tour.cpu().numpy()[0], cost.item()
+    # 4. Calculate actual distance for the display
+    # We do this manually here to get the specific number for the title
+    # (The model returns cost, but extracting it from the complex return tuple is cleaner here)
+    tour_indices = tour.cpu().numpy()[0]
+    return tour_indices
 
 if __name__ == "__main__":
     # --- 1. Configuration ---
@@ -50,9 +55,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # --- 2. The Map (Input Data) ---
-    # For this demo, we manually define a Depot (0,0) and 5 customers
-    # In the real world, you would load this from a JSON or CSV file
-    # Format: [x, y]
+    # Depot is first (0.5, 0.5), followed by 5 customers
     customers = [
         [0.50, 0.50], # Depot (Index 0)
         [0.12, 0.34], # Customer 1
@@ -71,18 +74,20 @@ if __name__ == "__main__":
 
         # --- 4. Solve the Problem ---
         print(f"Solving for {len(customers)-1} customers...")
-        route_indices, total_distance = solve_problem(brain, customers, device)
+        route_indices = solve_problem(brain, customers, device)
         
         print(f"\nOptimized Route Sequence: {route_indices}")
-        print(f"Total Estimated Distance: {total_distance:.4f}")
         
         # --- 5. Visualize ---
         print("Generating Map...")
         depot = customers[0]
-        # Exclude depot from the 'nodes' list passed to visualize because 
-        # visualize_routes likely handles the depot separately or as part of the list
-        # We pass the full list and let the visualizer handle the indices
-        visualize_routes(depot, customers[1:], route_indices, title=f"Solution (Dist: {total_distance:.2f})")
+        # Note: visualize_routes expects the customer list to NOT include depot,
+        # but the route_indices refer to the full list (0=Depot).
+        # Our visualize.py handles this by mapping indices to the combined list.
+        visualize_routes(depot, customers[1:], route_indices, title="AI Optimized Solution")
 
     except FileNotFoundError:
-        print("Error: Could not find 'vrp_model.pth'. Please run 'main.py' first to train the model!")
+        print("\n❌ Error: 'vrp_model.pth' not found.")
+        print("   Please run 'python main.py' first to train the model!")
+    except Exception as e:
+        print(f"\n❌ An error occurred: {e}")
